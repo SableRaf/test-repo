@@ -17,7 +17,8 @@ jobs:
           script: |
             const cutoffDays = 0;
             const exemptLabels = ['keep-open'];
-            const dryRun = true;
+            const dryRun = true; // set to false to actually close issues / pull requests
+            const closeAmount = 3; // set to a number to cap how many are closed or null to close all that meet the criteria
 
             const cutoff = new Date();
             cutoff.setDate(cutoff.getDate() - cutoffDays);
@@ -33,7 +34,14 @@ jobs:
 
             console.log(`Found ${threads.length} open issues / pull requests.`);
 
+            let closedCount = 0;
+
             for (const thread of threads) {
+              if (closeAmount != null && closedCount >= closeAmount) {
+                console.log(`Reached closeAmount limit of ${closeAmount}; stopping.`);
+                break;
+              }
+
               const labels = thread.labels.map(label => label.name);
               const isExempt = labels.some(label => exemptLabels.includes(label));
               const isPr = Boolean(thread.pull_request);
@@ -50,6 +58,8 @@ jobs:
               }
 
               console.log(`${dryRun ? '[DRY RUN] Would close' : 'Closing'} ${isPr ? 'PR' : 'issue'} #${thread.number}: ${thread.title}`);
+
+              closedCount++;
 
               if (dryRun) {
                 continue;
