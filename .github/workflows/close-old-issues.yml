@@ -1,0 +1,79 @@
+name: Smoke test close old threads
+
+on:
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const cutoffDays = 0;
+            const exemptLabels = ['keep-open'];
+            const dryRun = true;
+
+            const cutoff = new Date();
+            cutoff.setDate(cutoff.getDate() - cutoffDays);
+
+            const threads = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+              sort: 'updated',
+              direction: 'asc'
+            });
+
+            console.log(`Found ${threads.length} open issues / pull requests.`);
+
+            for (const thread of threads) {
+              const labels = thread.labels.map(label => label.name);
+              const isExempt = labels.some(label => exemptLabels.includes(label));
+              const isPr = Boolean(thread.pull_request);
+              const updatedAt = new Date(thread.updated_at);
+
+              if (updatedAt > cutoff) {
+                console.log(`Skipping #${thread.number}: recently updated.`);
+                continue;
+              }
+
+              if (isExempt) {
+                console.log(`Skipping #${thread.number}: exempt label.`);
+                continue;
+              }
+
+              console.log(`${dryRun ? '[DRY RUN] Would close' : 'Closing'} ${isPr ? 'PR' : 'issue'} #${thread.number}: ${thread.title}`);
+
+              if (dryRun) {
+                continue;
+              }
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: thread.number,
+                body: 'Smoke test close message.'
+              });
+
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: thread.number,
+                state: 'closed',
+                state_reason: 'not_planned'
+              });
+
+              await github.rest.issues.lock({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: thread.number,
+                lock_reason: 'resolved'
+              });
+            }
